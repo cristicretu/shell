@@ -1,7 +1,8 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
+use std::process::exit;
 
-const COMMANDS: &[&str] = &["help", "exit"];
+const COMMANDS: &[&str] = &["exit"];
 
 fn main() {
     loop {
@@ -14,10 +15,16 @@ fn main() {
 
         let input = input.trim();
 
-        if COMMANDS.contains(&input) {
-            continue;
+        let program = input.split_whitespace().next().unwrap();
+        let arguments = input.split_whitespace().skip(1).collect::<Vec<&str>>();
+
+        if COMMANDS.contains(&program) {
+            match program {
+                "exit" => exit(arguments.get(0).and_then(|x| x.parse().ok()).unwrap_or(0)),
+                _ => unreachable!(),
+            }
         } else {
-            println!("{}: command not found", input);
+            println!("{}: command not found", program)
         }
     }
 }
