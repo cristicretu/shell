@@ -1,103 +1,100 @@
-use std::env;
 #[allow(unused_imports)]
+use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::io::{self, Write};
-use std::process::exit;
-use std::process::Command;
+use std::process::{exit, Command};
 
 // const COMMANDS: &[&str] = &["exit", "echo", "type"];
 const BUILTINS: &[&str] = &["exit", "echo", "type"];
 
-fn main() {
-    let path = env::var("PATH").unwrap();
-    let mut commands: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-
+fn build_commands_map(path: &str) -> HashMap<String, String> {
+    let mut commands = HashMap::new();
     for path in path.split(':') {
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    if let Some(command) = entry.file_name().to_str() {
-                        // commands.insert(command.to_string(), path.to_string()); // make sure to keep only the first one
-                        commands
-                            .entry(command.to_string())
-                            .or_insert(path.to_string());
-                    }
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.filter_map(Result::ok) {
+                if let Some(command) = entry.file_name().to_str() {
+                    commands
+                        .entry(command.to_string())
+                        .or_insert_with(|| path.to_string());
                 }
             }
         }
     }
+    commands
+}
 
-    for builtin in BUILTINS {
-        commands.insert(builtin.to_string(), "builtin".to_string());
+fn read_input() -> String {
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap_or_default();
+    input
+}
+
+fn parse_input(input: &str) -> (&str, Vec<&str>) {
+    let mut parts = input.split_whitespace();
+    let program = parts.next().unwrap_or("");
+    let arguments = parts.collect();
+    (program, arguments)
+}
+
+fn execute_builtin(program: &str, arguments: &[&str]) {
+    match program {
+        "exit" => exit(arguments.get(0).and_then(|x| x.parse().ok()).unwrap_or(0)),
+        "echo" => println!("{}", arguments.join(" ")),
+        "type" => {
+            if let Some(cmd) = arguments.get(0) {
+                if BUILTINS.contains(cmd) {
+                    println!("{} is a shell builtin", cmd);
+                } else {
+                    println!("{}: not found", cmd);
+                }
+            } else {
+                println!("Usage: type [command]");
+            }
+        }
+        _ => unreachable!(),
     }
-    loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
+}
 
-        let stdin = io::stdin();
-        let mut input = String::new();
-        stdin.read_line(&mut input).unwrap();
+fn execute_command(path: &str, program: &str, arguments: &[&str]) {
+    let command_path = if program.contains('/') {
+        program.to_string()
+    } else {
+        format!("{}/{}", path, program)
+    };
 
-        let input = input.trim();
-
-        let program = input.split_whitespace().next().unwrap();
-        let arguments = input.split_whitespace().skip(1).collect::<Vec<&str>>();
-
-        if commands.contains_key(program)
-            || BUILTINS.contains(&program)
-            || program.contains("/")
-            || program.contains(".")
-        {
-            // if it has a slash, it's a path
-            if program.contains("/") {
-                let mut child = Command::new(program)
-                    .args(arguments)
-                    .spawn()
-                    .expect("failed to exec child");
-
-                child.wait().expect("failed to wait on child");
-                continue;
-            }
-
-            match program {
-                "exit" => exit(arguments.get(0).and_then(|x| x.parse().ok()).unwrap_or(0)),
-                "echo" => {
-                    let to_print: String = arguments.join(" ");
-                    println!("{}", to_print);
-                }
-                "type" => {
-                    if !arguments.is_empty() {
-                        let cmd = arguments[0];
-                        if BUILTINS.contains(&cmd) {
-                            println!("{} is a shell builtin", cmd);
-                        } else if let Some(path) = commands.get(cmd) {
-                            println!("{}/{}", path, cmd);
-                        } else {
-                            println!("{}: not found", cmd);
-                        }
-                    } else {
-                        println!("Usage: type [command]");
-                    }
-                }
-                _ => {
-                    // println!("{}/{}", commands[program], program);
-                    // println!("{:?}", arguments);
-
-                    let child_args = if arguments.len() > 0 {
-                        arguments
-                    } else {
-                        vec![]
-                    };
-                    let mut child = Command::new(format!("{}/{}", commands[program], program))
-                        .args(child_args)
-                        .spawn()
-                        .expect("failed to exec child");
-
-                    child.wait().expect("failed to wait on child");
-                }
-            }
-        } else {
-            println!("{}: command not found", program);
+    match Command::new(command_path).args(arguments).spawn() {
+        Ok(mut child) => {
+            child.wait().expect("failed to wait on child");
+        }
+        Err(e) => {
+            println!("Error executing {}: {}", program, e);
         }
     }
 }
 
+fn main() {
+    let path = env::var("PATH").unwrap_or_default();
+    let mut commands = build_commands_map(&path);
+
+    for builtin in BUILTINS {
+        commands.insert(builtin.to_string(), "builtin".to_string());
+    }
+
+    loop {
+        print!("$ ");
+        io::stdout().flush().unwrap();
+
+        let input = read_input().trim().to_string();
+        if input.is_empty() {
+            continue;
+        }
+
+        let (program, arguments) = parse_input(&input);
+        match commands.get(program).map(String::as_str) {
+            Some("builtin") => execute_builtin(program, &arguments),
+            Some(path) => execute_command(path, program, &arguments),
+            None => println!("{}: command not found", program),
+        }
+    }
+}
