@@ -2,7 +2,7 @@
 use std::io::{self, Write};
 use std::process::exit;
 
-const COMMANDS: &[&str] = &["exit", "echo"];
+const COMMANDS: &[&str] = &["exit", "echo", "type"];
 
 fn main() {
     loop {
@@ -24,6 +24,18 @@ fn main() {
                 "echo" => {
                     let to_print: String = arguments.join(" ");
                     println!("{}", to_print);
+                }
+                "type" => {
+                    if !arguments.is_empty() {
+                        let cmd = arguments[0];
+                        if COMMANDS.contains(&cmd) {
+                            println!("{} is a shell builtin", cmd);
+                        } else {
+                            println!("{} not found", cmd);
+                        }
+                    } else {
+                        println!("Usage: type [command]");
+                    }
                 }
                 _ => unreachable!(),
             }
