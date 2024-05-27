@@ -1,10 +1,30 @@
+use std::env;
 #[allow(unused_imports)]
 use std::io::{self, Write};
 use std::process::exit;
 
-const COMMANDS: &[&str] = &["exit", "echo", "type"];
+// const COMMANDS: &[&str] = &["exit", "echo", "type"];
+const BUILTINS: &[&str] = &["exit", "echo", "type"];
 
 fn main() {
+    let path = env::var("PATH").unwrap();
+    let mut commands: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    for path in path.split(':') {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if let Some(command) = entry.file_name().to_str() {
+                        commands.insert(command.to_string(), path.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    for builtin in BUILTINS {
+        commands.insert(builtin.to_string(), "builtin".to_string());
+    }
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -18,7 +38,7 @@ fn main() {
         let program = input.split_whitespace().next().unwrap();
         let arguments = input.split_whitespace().skip(1).collect::<Vec<&str>>();
 
-        if COMMANDS.contains(&program) {
+        if commands.contains_key(program) || BUILTINS.contains(&program) {
             match program {
                 "exit" => exit(arguments.get(0).and_then(|x| x.parse().ok()).unwrap_or(0)),
                 "echo" => {
@@ -28,19 +48,21 @@ fn main() {
                 "type" => {
                     if !arguments.is_empty() {
                         let cmd = arguments[0];
-                        if COMMANDS.contains(&cmd) {
+                        if BUILTINS.contains(&cmd) {
                             println!("{} is a shell builtin", cmd);
+                        } else if let Some(path) = commands.get(cmd) {
+                            println!("{}/{}", path, cmd);
                         } else {
-                            println!("{} not found", cmd);
+                            println!("{}: not found", cmd);
                         }
                     } else {
                         println!("Usage: type [command]");
                     }
                 }
-                _ => unreachable!(),
+                _ => println!("{}: command not found", program),
             }
         } else {
-            println!("{}: command not found", program)
+            println!("{}: command not found", program);
         }
     }
 }
