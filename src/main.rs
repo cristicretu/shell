@@ -2,7 +2,7 @@
 use std::io::{self, Write};
 use std::process::exit;
 
-const COMMANDS: &[&str] = &["exit"];
+const COMMANDS: &[&str] = &["exit", "echo"];
 
 fn main() {
     loop {
@@ -21,6 +21,10 @@ fn main() {
         if COMMANDS.contains(&program) {
             match program {
                 "exit" => exit(arguments.get(0).and_then(|x| x.parse().ok()).unwrap_or(0)),
+                "echo" => {
+                    let to_print: String = arguments.join(" ");
+                    println!("{}", to_print);
+                }
                 _ => unreachable!(),
             }
         } else {
